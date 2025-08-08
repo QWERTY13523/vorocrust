@@ -1,0 +1,1 @@
+/usr/bin/c++  -Wno-unknown-pragmas -fPIC -fopenmp -g CMakeFiles/vc_mesh.dir/vc_mesh.cxx.o -o ../../vc_mesh  ../../lib/liblibVCMesh.a 

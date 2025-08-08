@@ -1,0 +1,44 @@
+***********************************************************
+*                                                         *
+*  Program    : VoroCrust                                 *
+*  Version    : Development Branch                        *
+*  Git SHA1   : UNKNOWN                                   *
+*  Commit Date: UNKNOWN                                   *
+*  Run Date   : 2025-08-08 01:48:15 +0000                 *
+*  Website    : https://vorocrust.sandia.gov              *
+*                                                         *
+***********************************************************
+MeshingVoroCrust::Input Data:
+  * Input Mesh = less_leaf.obj
+    Minimum Sphere Radius = 0
+    Maximum Sphere Radius = 10000
+    Lipschitz Const = 0.25
+    VC Smooth Angle Threshold = 80
+    A clean input model 
+    Number of OpenMP threads = 64
+VoroCrust::Reading obj file:
+  * Number of Input mesh points = 1252
+  * Number of Input mesh faces = 2500
+VoroCrust::Initiating VoroCrust Sampler .. 
+  * VoroCrust is using 64 / 128 available threads!
+VoroCrust::Feature Detection and Point Clouds Generation (Clean Input):
+  * Number of Sharp Corners = 12
+  * Number of Sharp Edges = 110
+  * executed in 1.53469 seconds!
+VoroCrust::Generating Corner Spheres:
+  * Number of Spheres = 12
+  * Minimum Corner Sphere Radius = 0.138263
+  * Maximum Corner Sphere Radius = 2.81938
+  * Corner spheres are saved corner_spheres.csv
+  * executed in 0.845186 seconds!
+VoroCrust::Generating Edge Spheres:
+  * Number of Spheres = (12, 129)
+  * Minimum Edge Sphere Radius = 0.0163324
+  * Maximum Edge Sphere Radius = 11.2677
+  * Edge spheres are saved edges_spheres.csv
+  * executed in 12.5456 seconds!
+VoroCrust::Generating Surface Spheres:
+  * Number of Spheres = (12, 129, 5000)
+  * Number of Spheres = (12, 129, 10000)
+  * Number of Spheres = (12, 129, 15000)
+  * Number of Spheres = (12, 129, 20000)
