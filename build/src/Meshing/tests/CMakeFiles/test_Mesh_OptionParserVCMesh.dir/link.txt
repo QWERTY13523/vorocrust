@@ -1,1 +1,0 @@
-/usr/bin/c++  -Wno-unknown-pragmas -fPIC -fopenmp -g CMakeFiles/test_Mesh_OptionParserVCMesh.dir/test_Mesh_OptionParserVCMesh.cpp.o -o ../../../tests/test_Mesh_OptionParserVCMesh  ../../../lib/liblibVCMesh.a 
