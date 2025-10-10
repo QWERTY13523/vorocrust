@@ -253,6 +253,7 @@ int MeshingVoroCrust::execute_vc(int num_threads, size_t num_points, double** po
 	MeshingSmartTree* surface_spheres = new MeshingSmartTree();
 	MeshingSmartTree* edge_spheres = new MeshingSmartTree();
 	MeshingSmartTree* corner_spheres = new MeshingSmartTree();
+	MeshingSmartTree* spheres = new MeshingSmartTree();
 	MeshingSmartTree* surf_ext_seeds = new MeshingSmartTree();
 	MeshingSmartTree* surf_int_seeds = new MeshingSmartTree();
 
@@ -271,14 +272,22 @@ int MeshingVoroCrust::execute_vc(int num_threads, size_t num_points, double** po
 	else
 		vc_sampler->detect_features_generate_point_clouds(num_points, points, num_faces, faces, smooth_angle_threshold, rmin, surface_point_cloud, edge_point_cloud, num_sharp_edges, sharp_edges, num_sharp_corners, sharp_corners);
 
-	if (num_sharp_corners > 0)
-		vc_sampler->generate_corner_spheres(num_points, points, num_sharp_corners, sharp_corners, surface_point_cloud, edge_point_cloud, rmin, corner_spheres, smooth_angle_threshold, rmax, Lip);
-	if (num_sharp_edges > 0)
-		vc_sampler->generate_edge_spheres(num_points, points, num_sharp_edges, sharp_edges, surface_point_cloud, edge_point_cloud, rmin, edge_spheres, corner_spheres, smooth_angle_threshold, rmax, Lip, 0.5);
+	// if (num_sharp_corners > 0)
+	// 	vc_sampler->generate_corner_spheres(num_points, points, num_sharp_corners, sharp_corners, surface_point_cloud, edge_point_cloud, rmin, corner_spheres, smooth_angle_threshold, rmax, Lip);
+	// if (num_sharp_edges > 0)
+	// 	vc_sampler->generate_edge_spheres(num_points, points, num_sharp_edges, sharp_edges, surface_point_cloud, edge_point_cloud, rmin, edge_spheres, corner_spheres, smooth_angle_threshold, rmax, Lip, 0.5);
+	//
+	// vc_sampler->generate_surface_spheres(num_points, points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
 
-	vc_sampler->generate_surface_spheres(num_points, points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
+	vc_sampler->generate_spheres("Sphere_1500_55.csv", spheres);
+	std::cout<<"num of spheres is "<<spheres->get_num_tree_points()<<std::endl;
+	bool sphere_shrunk_slivers = true;
+	vc_sampler->generate_surface_seeds(num_points, points, num_faces, faces, spheres, Lip, sphere_shrunk_slivers, surf_ext_seeds, surf_int_seeds);
+	//vc_sampler->generate_surface_spheres(num_points,points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
+	vc_sampler->color_surface_seeds(spheres, seeds, surf_ext_seeds, surf_int_seeds, spheres->get_num_tree_points(), num_subregions);
+	//vc_sampler->color_surface_seeds(surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, spheres, seeds,num_subregions);
+	//std::cout<<"numbers of seeds " << seeds->get_num_tree_points()<< std::endl;
 
-	vc_sampler->color_surface_seeds(surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, interface_spheres, seeds, num_subregions);
 	delete surf_ext_seeds; delete surf_int_seeds; delete interface_spheres;
 
 	delete surface_point_cloud; delete edge_point_cloud;
@@ -286,19 +295,19 @@ int MeshingVoroCrust::execute_vc(int num_threads, size_t num_points, double** po
 	if (num_sharp_edges > 0) delete[] sharp_edges;
 	if (num_sharp_corners > 0) delete[] sharp_corners;
 
-	delete vc_sampler;
+	//delete vc_sampler;
 
 	size_t num_surface_seeds(seeds->get_num_tree_points());
 
 	size_t num_seed_points(0);
 	double* seed_points(0); size_t* seed_points_region_id(0); double* seed_points_sizing(0);
-	generate_interior_seeds(seeds, surface_spheres, edge_spheres, corner_spheres, input_sizing_function, num_threads, Lip, rmax,
+	generate_interior_seeds(seeds, spheres, input_sizing_function, num_threads, Lip, rmax,
 		                    impose_monitoring_points, generate_monitoring_points,
 		                    num_seed_points, seed_points, seed_points_region_id, seed_points_sizing);
 
 	if (generate_vcg_file || generate_exodus_file)
 	{
-		generate_explicit_mesh(num_threads, num_seed_points, seed_points, seed_points_region_id, seed_points_sizing, num_surface_seeds, generate_vcg_file, generate_exodus_file);
+		generate_explicit_mesh(num_threads, num_seed_points, seed_points, seed_points_region_id, seed_points_sizing, num_surface_seeds, 1, generate_exodus_file);
 	}
 	return 0;
 	#pragma endregion
@@ -614,6 +623,259 @@ int MeshingVoroCrust::generate_interior_seeds(MeshingSmartTree* seeds_tree, Mesh
 	#pragma endregion
 }
 
+int MeshingVoroCrust::generate_interior_seeds(MeshingSmartTree* seeds_tree, MeshingSmartTree* spheres_tree,
+	                                          MeshingSmartTree* sz_function_tree, int num_threads, double Lip, double rmax,
+	                                          bool impose_monitoring_points, bool generate_monitoring_points,
+	                                          size_t &num_seeds, double* &seeds, size_t* &seeds_region_id, double* &seeds_sizing)
+{
+	#pragma region Generate Interior Seeds:
+
+	num_seeds = seeds_tree->get_num_tree_points();
+	size_t num_surface_seeds(num_seeds);
+	seeds = new double[num_seeds * 3];
+	seeds_region_id = new size_t[num_seeds];
+	seeds_sizing = new double[num_seeds];
+
+	for (size_t iseed = 0; iseed < num_seeds; iseed++)
+	{
+		double* x = seeds_tree->get_tree_point(iseed);
+		size_t* attrib = seeds_tree->get_tree_point_attrib(iseed);
+		for (size_t idim = 0; idim < 3; idim++) seeds[iseed * 3 + idim] = x[idim];
+		seeds_region_id[iseed] = attrib[5];
+		seeds_sizing[iseed] = x[3];
+	}
+	delete seeds_tree;
+
+	size_t num_spheres = spheres_tree->get_num_tree_points();
+	double* spheres(0);
+	double* spheres_sizing(0);
+	if (num_spheres > 0)
+	{
+		spheres = new double[num_spheres * 3];
+		spheres_sizing = new double[num_spheres];
+		for (size_t isphere = 0; isphere < num_spheres; isphere++)
+		{
+			double* x = spheres_tree->get_tree_point(isphere);
+			for (size_t idim = 0; idim < 3; idim++) spheres[isphere * 3 + idim] = x[idim];
+			spheres_sizing[isphere] = x[3];
+		}
+	}
+	delete spheres_tree;
+
+	size_t num_sz_points(0);
+	if (sz_function_tree != 0) num_sz_points = sz_function_tree->get_num_tree_points();
+	double* sz_points(0);
+	double* sz_value(0);
+	if (num_sz_points > 0)
+	{
+		sz_points = new double[num_sz_points * 3];
+		sz_value = new double[num_sz_points];
+		for (size_t ipoint = 0; ipoint < num_sz_points; ipoint++)
+		{
+			double* x = sz_function_tree->get_tree_point(ipoint);
+			for (size_t idim = 0; idim < 3; idim++) sz_points[ipoint * 3 + idim] = x[idim];
+			sz_value[ipoint] = x[3];
+		}
+	}
+	delete sz_function_tree;
+
+	MeshingVoronoiMesher mesher;
+
+	MeshingTimer timer;
+	size_t num_imposed_seeds(0); double* imposed_seeds(0);
+
+	size_t num_critical_seeds(num_seeds);
+
+	size_t num_imposed_seeds_added(0);
+	if (impose_monitoring_points)
+	{
+		vcm_cout << "MeshingVoroCrust::Imposing Monitoring Points:" << std::endl;
+
+		timer.start();
+
+		mesher.load_spheres_csv("monitoring_points.csv", 3, num_imposed_seeds, imposed_seeds);
+
+		mesher.impose_interior_seeds(num_seeds, seeds, seeds_sizing, seeds_region_id,
+			                         num_spheres, spheres, spheres_sizing,
+			                         0, 0, 0,
+			                         0, 0, 0,
+			                         num_sz_points, sz_points, sz_value,
+			                         num_imposed_seeds, imposed_seeds, num_threads, Lip, rmax);
+
+		generate_monitoring_points = false;
+
+		num_imposed_seeds_added = num_seeds - num_surface_seeds;
+		vcm_cout << "  * added " << num_imposed_seeds_added << " / " << num_imposed_seeds << " desired imposed points!" << std::endl;
+		vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+	}
+
+
+	vcm_cout << "MeshingVoroCrust::Generating Interior Seeds:" << std::endl;
+
+	timer.start();
+
+	mesher.generate_interior_seeds(num_seeds, seeds, seeds_sizing, seeds_region_id,
+		                           num_spheres, spheres, spheres_sizing,
+		                           0, 0, 0,
+		                           0, 0, 0,
+		                           num_sz_points, sz_points, sz_value, num_threads, Lip, rmax);
+
+
+	if (impose_monitoring_points)
+	{
+		vcm_cout << "MeshingVoroCrust::Retrieving closest seeds to Monitoring Points:" << std::endl;
+
+		double** seeds_ = new double* [num_seeds];
+		for (size_t iseed = 0; iseed < num_seeds; iseed++)
+		{
+			seeds_[iseed] = new double[3];
+			for (size_t idim = 0; idim < 3; idim++) seeds_[iseed][idim] = seeds[iseed * 3 + idim];
+		}
+
+		double* x = new double[4];
+
+		MeshingSmartTree seeds_tree(3, num_seeds, seeds_);
+
+		size_t num_invalidated(0);
+		bool* valid_seed = new bool[num_seeds];
+		for (size_t iseed = 0; iseed < num_seeds; iseed++) valid_seed[iseed] = true;
+
+		for (size_t iseed = 0; iseed < num_imposed_seeds; iseed++)
+		{
+			for (size_t idim = 0; idim < 4; idim++) x[idim] = imposed_seeds[iseed * 4 + idim];
+
+			// find closest point in seeds .. if distance in zero, make sure this sphere has no interior seeds
+			size_t iclosest(SIZE_MAX); double hclosest(DBL_MAX);
+			seeds_tree.get_closest_tree_point(x, iclosest, hclosest);
+
+			if (hclosest < 1E-10)
+			{
+				size_t num(0), cap(100);
+				size_t* points_in_sphere = new size_t[cap];
+				seeds_tree.get_tree_points_in_sphere(x, x[3], num, points_in_sphere, cap);
+				for (size_t i = 0; i < num; i++)
+				{
+					size_t seed_index = points_in_sphere[i];
+
+					if (valid_seed[seed_index] && seed_index >= num_critical_seeds + num_imposed_seeds_added)
+					{
+						valid_seed[seed_index] = false;
+						num_invalidated++;
+					}
+				}
+				seeds_sizing[iclosest] = x[3];
+			}
+		}
+
+		for (size_t iseed = 0; iseed < num_imposed_seeds; iseed++)
+		{
+			for (size_t idim = 0; idim < 4; idim++) x[idim] = imposed_seeds[iseed * 4 + idim];
+
+			// find closest point in seeds .. if distance in zero, make sure this sphere has no interior seeds
+			size_t iclosest(SIZE_MAX); double hclosest(DBL_MAX);
+			seeds_tree.get_closest_tree_point(x, iclosest, hclosest);
+
+			if (hclosest < 1E-10)
+				continue;
+			else
+			{
+				for (size_t idim = 0; idim < 3; idim++)
+				{
+					imposed_seeds[iseed * 4 + idim] = seeds[iclosest * 3 + idim];
+				}
+				imposed_seeds[iseed * 4 + 3] = seeds_sizing[iclosest];
+			}
+		}
+
+		if (num_invalidated > 0)
+		{
+			size_t num_valid_seeds = num_seeds - num_invalidated;
+			double* tmp = new double[num_valid_seeds * 3];
+			double* tmps = new double[num_valid_seeds];
+			size_t* tmp_id = new size_t[num_valid_seeds];
+			size_t ivalid = 0;
+			for (size_t iseed = 0; iseed < num_seeds; iseed++)
+			{
+				if (!valid_seed[iseed]) continue;
+				for (size_t idim = 0; idim < 3; idim++) tmp[ivalid * 3 + idim] = seeds[iseed * 3 + idim];
+				tmps[ivalid] = seeds_sizing[iseed];
+				tmp_id[ivalid] = seeds_region_id[iseed];
+				ivalid++;
+			}
+			num_seeds = num_valid_seeds;
+			delete[] seeds; seeds = tmp;
+			delete[] seeds_sizing; seeds_sizing = tmps;
+			delete[] seeds_region_id; seeds_region_id = tmp_id;
+		}
+
+
+		mesher.save_spheres_csv("monitoring_points_closest_seeds.csv", 3, num_imposed_seeds, imposed_seeds, 0, 0);
+		vcm_cout << "  * Updated monitoring points are saved in monitoring_points_closest_seeds.csv" << std::endl;
+
+		delete[] imposed_seeds;
+
+		delete[] x;
+
+		delete[] valid_seed;
+
+		vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+	}
+
+	mesher.save_spheres_csv("seeds.csv", 3, num_seeds, seeds, seeds_sizing, seeds_region_id);
+	vcm_cout << "  * All seeds are stored in seeds.csv, saved in " << timer.report_timing() << " seconds!" << std::endl;
+
+	vcm_cout << "  * Number of added seeds " << num_seeds - num_surface_seeds << std::endl;
+	vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+
+	if (num_spheres > 0)
+	{
+		delete[] spheres; delete[] spheres_sizing;
+	}
+	if (num_sz_points > 0)
+	{
+		delete[] sz_points; delete[] sz_value;
+	}
+
+	if (generate_monitoring_points)
+	{
+		#pragma region Generate Monitoring Points:
+		vcm_cout << "MeshingVoroCrust::Generating Monitoring Points:" << std::endl;
+		size_t num_monitoring_points(num_seeds - num_surface_seeds);
+		if (num_monitoring_points > 100) num_monitoring_points = 100;
+		vcm_cout << "  * Number of Monitoring Points = " << num_monitoring_points << std::endl;
+
+		size_t* seed_new_index = new size_t[num_seeds];
+		for (size_t iseed = 0; iseed < num_seeds; iseed++) seed_new_index[iseed] = iseed;
+
+		// shuffle interior indices
+		for (size_t iseed = num_surface_seeds; iseed < num_seeds; iseed++)
+		{
+			double u = _rsampler.generate_uniform_random_number();
+			size_t jseed = num_surface_seeds + size_t(u * (num_seeds - num_surface_seeds));
+			if (jseed == num_seeds) jseed--;
+			size_t tmp = seed_new_index[iseed];
+			seed_new_index[iseed] = seed_new_index[jseed];
+			seed_new_index[jseed] = tmp;
+		}
+
+		double* mon_pts = new double[num_monitoring_points * 4];
+		for (size_t i = 0; i < num_monitoring_points; i++)
+		{
+			size_t seed_index = seed_new_index[num_surface_seeds + i];
+			mon_pts[i * 4] = seeds[seed_index * 3];
+			mon_pts[i * 4 + 1] = seeds[seed_index * 3 + 1];
+			mon_pts[i * 4 + 2] = seeds[seed_index * 3 + 2];
+			mon_pts[i * 4 + 3] = seeds_sizing[seed_index];
+		}
+		mesher.save_spheres_csv("monitoring_points.csv", 3, num_monitoring_points, mon_pts, 0, 0);
+		vcm_cout << "  * Monitoring points are saved in monitoring_points.csv" << std::endl;
+
+		delete[] seed_new_index; delete[] mon_pts;
+		#pragma endregion
+	}
+	return 0;
+	#pragma endregion
+}
 
 int MeshingVoroCrust::generate_explicit_mesh(int num_threads, size_t num_seeds, double* seeds, size_t* seeds_region_id, double* seeds_sizing,
                                       size_t num_surface_seeds, bool generate_vcg_file, bool generate_exodus_file)
@@ -847,5 +1109,269 @@ int MeshingVoroCrust::get_tokens(std::string line, char separator, std::vector<s
 	#pragma endregion
 }
 
-
+// int MeshingVoroCrust::generate_interior_seeds(MeshingSmartTree* seeds_tree, MeshingSmartTree* spheres_tree,
+// 	                                          MeshingSmartTree* sz_function_tree, int num_threads, double Lip, double rmax,
+// 	                                          bool impose_monitoring_points, bool generate_monitoring_points,
+// 	                                          size_t &num_seeds, double* &seeds, size_t* &seeds_region_id, double* &seeds_sizing)
+// {
+// 	#pragma region Generate Interior Seeds:
+//
+// 	num_seeds = seeds_tree->get_num_tree_points();
+// 	size_t num_surface_seeds(num_seeds);
+// 	seeds = new double[num_seeds * 3];
+// 	seeds_region_id = new size_t[num_seeds];
+// 	seeds_sizing = new double[num_seeds];
+//
+// 	for (size_t iseed = 0; iseed < num_seeds; iseed++)
+// 	{
+// 		double* x = seeds_tree->get_tree_point(iseed);
+// 		size_t* attrib = seeds_tree->get_tree_point_attrib(iseed);
+// 		for (size_t idim = 0; idim < 3; idim++) seeds[iseed * 3 + idim] = x[idim];
+// 		seeds_region_id[iseed] = attrib[5];
+// 		seeds_sizing[iseed] = x[3];
+// 	}
+// 	delete seeds_tree;
+//
+// 	size_t num_spheres = spheres_tree->get_num_tree_points();
+// 	double* spheres(0);
+// 	double* spheres_sizing(0);
+// 	if (num_spheres > 0)
+// 	{
+// 		spheres = new double[num_spheres * 3];
+// 		spheres_sizing = new double[num_spheres];
+// 		for (size_t isphere = 0; isphere < num_spheres; isphere++)
+// 		{
+// 			double* x = spheres_tree->get_tree_point(isphere);
+// 			for (size_t idim = 0; idim < 3; idim++) spheres[isphere * 3 + idim] = x[idim];
+// 			spheres_sizing[isphere] = x[3];
+// 		}
+// 	}
+// 	delete spheres_tree;
+//
+// 	size_t num_sz_points(0);
+// 	if (sz_function_tree != 0) num_sz_points = sz_function_tree->get_num_tree_points();
+// 	double* sz_points(0);
+// 	double* sz_value(0);
+// 	if (num_sz_points > 0)
+// 	{
+// 		sz_points = new double[num_sz_points * 3];
+// 		sz_value = new double[num_sz_points];
+// 		for (size_t ipoint = 0; ipoint < num_sz_points; ipoint++)
+// 		{
+// 			double* x = sz_function_tree->get_tree_point(ipoint);
+// 			for (size_t idim = 0; idim < 3; idim++) sz_points[ipoint * 3 + idim] = x[idim];
+// 			sz_value[ipoint] = x[3];
+// 		}
+// 	}
+// 	delete sz_function_tree;
+//
+// 	MeshingVoronoiMesher mesher;
+//
+// 	MeshingTimer timer;
+// 	size_t num_imposed_seeds(0); double* imposed_seeds(0);
+//
+// 	if (true)
+// 	{
+// 		vcm_cout << "MeshingVoroCrust::Ensuring Sharp Feature Spheres are Delaunay:" << std::endl;
+//
+// 		timer.start();
+//
+// 		mesher.ensure_sharp_edge_spheres_are_Delaunay(num_seeds, seeds, seeds_sizing, seeds_region_id,
+// 			                                             num_surface_spheres, surface_spheres, surface_spheres_sizing,
+// 			                                             num_edge_spheres, edge_spheres, edge_spheres_sizing,
+// 			                                             num_corner_spheres, corner_spheres, corner_spheres_sizing,
+// 			                                             num_sz_points, sz_points, sz_value,
+// 			                                             num_threads, Lip, rmax);
+//
+// 		vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+// 	}
+//
+// 	size_t num_critical_seeds(num_seeds);
+//
+// 	size_t num_imposed_seeds_added(0);
+// 	if (impose_monitoring_points)
+// 	{
+// 		vcm_cout << "MeshingVoroCrust::Imposing Monitoring Points:" << std::endl;
+//
+// 		timer.start();
+//
+// 		mesher.load_spheres_csv("monitoring_points.csv", 3, num_imposed_seeds, imposed_seeds);
+//
+// 		mesher.impose_interior_seeds(num_seeds, seeds, seeds_sizing, seeds_region_id,
+// 			                         num_surface_spheres, surface_spheres, surface_spheres_sizing,
+// 			                         num_edge_spheres, edge_spheres, edge_spheres_sizing,
+// 			                         num_corner_spheres, corner_spheres, corner_spheres_sizing,
+// 			                         num_sz_points, sz_points, sz_value,
+// 			                         num_imposed_seeds, imposed_seeds, num_threads, Lip, rmax);
+//
+// 		generate_monitoring_points = false;
+//
+// 		num_imposed_seeds_added = num_seeds - num_surface_seeds;
+// 		vcm_cout << "  * added " << num_imposed_seeds_added << " / " << num_imposed_seeds << " desired imposed points!" << std::endl;
+// 		vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+// 	}
+//
+//
+// 	vcm_cout << "MeshingVoroCrust::Generating Interior Seeds:" << std::endl;
+//
+// 	timer.start();
+//
+// 	mesher.generate_interior_seeds(num_seeds, seeds, seeds_sizing, seeds_region_id,
+// 		                           num_surface_spheres, surface_spheres, surface_spheres_sizing,
+// 		                           num_edge_spheres, edge_spheres, edge_spheres_sizing,
+// 		                           num_corner_spheres, corner_spheres, corner_spheres_sizing,
+// 		                           num_sz_points, sz_points, sz_value, num_threads, Lip, rmax);
+//
+//
+// 	if (impose_monitoring_points)
+// 	{
+// 		vcm_cout << "MeshingVoroCrust::Retrieving closest seeds to Monitoring Points:" << std::endl;
+//
+// 		double** seeds_ = new double* [num_seeds];
+// 		for (size_t iseed = 0; iseed < num_seeds; iseed++)
+// 		{
+// 			seeds_[iseed] = new double[3];
+// 			for (size_t idim = 0; idim < 3; idim++) seeds_[iseed][idim] = seeds[iseed * 3 + idim];
+// 		}
+//
+// 		double* x = new double[4];
+//
+// 		MeshingSmartTree seeds_tree(3, num_seeds, seeds_);
+//
+// 		size_t num_invalidated(0);
+// 		bool* valid_seed = new bool[num_seeds];
+// 		for (size_t iseed = 0; iseed < num_seeds; iseed++) valid_seed[iseed] = true;
+//
+// 		for (size_t iseed = 0; iseed < num_imposed_seeds; iseed++)
+// 		{
+// 			for (size_t idim = 0; idim < 4; idim++) x[idim] = imposed_seeds[iseed * 4 + idim];
+//
+// 			// find closest point in seeds .. if distance in zero, make sure this sphere has no interior seeds
+// 			size_t iclosest(SIZE_MAX); double hclosest(DBL_MAX);
+// 			seeds_tree.get_closest_tree_point(x, iclosest, hclosest);
+//
+// 			if (hclosest < 1E-10)
+// 			{
+// 				size_t num(0), cap(100);
+// 				size_t* points_in_sphere = new size_t[cap];
+// 				seeds_tree.get_tree_points_in_sphere(x, x[3], num, points_in_sphere, cap);
+// 				for (size_t i = 0; i < num; i++)
+// 				{
+// 					size_t seed_index = points_in_sphere[i];
+//
+// 					if (valid_seed[seed_index] && seed_index >= num_critical_seeds + num_imposed_seeds_added)
+// 					{
+// 						valid_seed[seed_index] = false;
+// 						num_invalidated++;
+// 					}
+// 				}
+// 				seeds_sizing[iclosest] = x[3];
+// 			}
+// 		}
+//
+// 		for (size_t iseed = 0; iseed < num_imposed_seeds; iseed++)
+// 		{
+// 			for (size_t idim = 0; idim < 4; idim++) x[idim] = imposed_seeds[iseed * 4 + idim];
+//
+// 			// find closest point in seeds .. if distance in zero, make sure this sphere has no interior seeds
+// 			size_t iclosest(SIZE_MAX); double hclosest(DBL_MAX);
+// 			seeds_tree.get_closest_tree_point(x, iclosest, hclosest);
+//
+// 			if (hclosest < 1E-10)
+// 				continue;
+// 			else
+// 			{
+// 				for (size_t idim = 0; idim < 3; idim++)
+// 				{
+// 					imposed_seeds[iseed * 4 + idim] = seeds[iclosest * 3 + idim];
+// 				}
+// 				imposed_seeds[iseed * 4 + 3] = seeds_sizing[iclosest];
+// 			}
+// 		}
+//
+// 		if (num_invalidated > 0)
+// 		{
+// 			size_t num_valid_seeds = num_seeds - num_invalidated;
+// 			double* tmp = new double[num_valid_seeds * 3];
+// 			double* tmps = new double[num_valid_seeds];
+// 			size_t* tmp_id = new size_t[num_valid_seeds];
+// 			size_t ivalid = 0;
+// 			for (size_t iseed = 0; iseed < num_seeds; iseed++)
+// 			{
+// 				if (!valid_seed[iseed]) continue;
+// 				for (size_t idim = 0; idim < 3; idim++) tmp[ivalid * 3 + idim] = seeds[iseed * 3 + idim];
+// 				tmps[ivalid] = seeds_sizing[iseed];
+// 				tmp_id[ivalid] = seeds_region_id[iseed];
+// 				ivalid++;
+// 			}
+// 			num_seeds = num_valid_seeds;
+// 			delete[] seeds; seeds = tmp;
+// 			delete[] seeds_sizing; seeds_sizing = tmps;
+// 			delete[] seeds_region_id; seeds_region_id = tmp_id;
+// 		}
+//
+//
+// 		mesher.save_spheres_csv("monitoring_points_closest_seeds.csv", 3, num_imposed_seeds, imposed_seeds, 0, 0);
+// 		vcm_cout << "  * Updated monitoring points are saved in monitoring_points_closest_seeds.csv" << std::endl;
+//
+// 		delete[] imposed_seeds;
+//
+// 		delete[] x;
+//
+// 		delete[] valid_seed;
+//
+// 		vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+// 	}
+//
+// 	mesher.save_spheres_csv("seeds.csv", 3, num_seeds, seeds, seeds_sizing, seeds_region_id);
+// 	vcm_cout << "  * All seeds are stored in seeds.csv, saved in " << timer.report_timing() << " seconds!" << std::endl;
+//
+// 	vcm_cout << "  * Number of added seeds " << num_seeds - num_surface_seeds << std::endl;
+// 	vcm_cout << "  * executed in " << timer.report_timing() << " seconds!" << std::endl;
+//
+// 	if (num_spheres > 0)
+// 	{
+// 		delete[] spheres; delete[] spheres_sizing;
+// 	}
+//
+// 	if (generate_monitoring_points)
+// 	{
+// 		#pragma region Generate Monitoring Points:
+// 		vcm_cout << "MeshingVoroCrust::Generating Monitoring Points:" << std::endl;
+// 		size_t num_monitoring_points(num_seeds - num_surface_seeds);
+// 		if (num_monitoring_points > 100) num_monitoring_points = 100;
+// 		vcm_cout << "  * Number of Monitoring Points = " << num_monitoring_points << std::endl;
+//
+// 		size_t* seed_new_index = new size_t[num_seeds];
+// 		for (size_t iseed = 0; iseed < num_seeds; iseed++) seed_new_index[iseed] = iseed;
+//
+// 		// shuffle interior indices
+// 		for (size_t iseed = num_surface_seeds; iseed < num_seeds; iseed++)
+// 		{
+// 			double u = _rsampler.generate_uniform_random_number();
+// 			size_t jseed = num_surface_seeds + size_t(u * (num_seeds - num_surface_seeds));
+// 			if (jseed == num_seeds) jseed--;
+// 			size_t tmp = seed_new_index[iseed];
+// 			seed_new_index[iseed] = seed_new_index[jseed];
+// 			seed_new_index[jseed] = tmp;
+// 		}
+//
+// 		double* mon_pts = new double[num_monitoring_points * 4];
+// 		for (size_t i = 0; i < num_monitoring_points; i++)
+// 		{
+// 			size_t seed_index = seed_new_index[num_surface_seeds + i];
+// 			mon_pts[i * 4] = seeds[seed_index * 3];
+// 			mon_pts[i * 4 + 1] = seeds[seed_index * 3 + 1];
+// 			mon_pts[i * 4 + 2] = seeds[seed_index * 3 + 2];
+// 			mon_pts[i * 4 + 3] = seeds_sizing[seed_index];
+// 		}
+// 		mesher.save_spheres_csv("monitoring_points.csv", 3, num_monitoring_points, mon_pts, 0, 0);
+// 		vcm_cout << "  * Monitoring points are saved in monitoring_points.csv" << std::endl;
+//
+// 		delete[] seed_new_index; delete[] mon_pts;
+// 		#pragma endregion
+// 	}
+// 	return 0;
+// 	#pragma endregion
+// }
 

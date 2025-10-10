@@ -1147,6 +1147,7 @@ int MeshingVoroCrustSampler::generate_corner_spheres(size_t num_points, double**
 
 
 	double min_radius(DBL_MAX), max_radius(0.0);
+	//算最大最小半径
 	for (size_t i = 0; i < num_samples; i++)
 	{
 		double* sphere = corner_spheres->get_tree_point(i);
@@ -1525,7 +1526,7 @@ int MeshingVoroCrustSampler::generate_surface_spheres(size_t num_points, double*
 				size_t* sphere_i_attrib = surface_spheres->get_tree_point_attrib(sphere_i_index);
 				size_t face_i_index = sphere_i_attrib[1];
 
-				size_t i1(faces[face_i_index][1]), i2(faces[face_i_index][2]), i3(faces[face_i_index][2]);
+				size_t i1(faces[face_i_index][1]), i2(faces[face_i_index][2]), i3(faces[face_i_index][3]);
 
 				// Collect spheres overlapping with isphere:
 				size_t num_nearby_spheres(0); size_t* nearby_spheres(0);
@@ -1647,7 +1648,6 @@ int MeshingVoroCrustSampler::generate_surface_spheres(size_t num_points, double*
 	return 0;
 	#pragma endregion
 }
-
 
 int MeshingVoroCrustSampler::color_surface_seeds(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds,
 	                                      MeshingSmartTree* spheres, MeshingSmartTree* seeds, size_t &num_subregions)
@@ -2323,6 +2323,8 @@ int MeshingVoroCrustSampler::color_surface_seeds(MeshingSmartTree* surface_spher
 
 	vcm_cout << "  * Number of subregions is " << num_subregions << std::endl;
 	vcm_cout << "  * executed in " << cpu_time << " seconds!" << std::endl;
+
+
 	return 0;
 	#pragma endregion
 }
@@ -3152,18 +3154,20 @@ int MeshingVoroCrustSampler::generate_surface_seeds(size_t num_points, double** 
 		size_t sphere_i_face;
 		surface_spheres->get_tree_point_attrib(isphere, 0, sphere_i_face);
 
-		size_t num_near_by_spheres(0); size_t* near_by_spheres(0);
+		size_t num_near_by_spheres(0); size_t* near_by_spheres(nullptr);
+
+		//找到所有和sphere_i相交的球
 		if (true)
 		{
 			#pragma region Collect spheres overlapping with isphere:
 
-			size_t num_nearby_spheres_s(0); size_t* nearby_spheres_s(0);
+			size_t num_nearby_spheres_s(0); size_t* nearby_spheres_s(nullptr);
 			_smethods.get_overlapping_spheres(sphere_i, surface_spheres, Lip, num_nearby_spheres_s, nearby_spheres_s);
 
-			size_t num_nearby_spheres_e(0); size_t* nearby_spheres_e(0);
+			size_t num_nearby_spheres_e(0); size_t* nearby_spheres_e(nullptr);
 			_smethods.get_overlapping_spheres(sphere_i, edge_spheres, Lip, num_nearby_spheres_e, nearby_spheres_e);
 
-			size_t num_nearby_spheres_c(0); size_t* nearby_spheres_c(0);
+			size_t num_nearby_spheres_c(0); size_t* nearby_spheres_c(nullptr);
 			_smethods.get_overlapping_spheres(sphere_i, corner_spheres, Lip, num_nearby_spheres_c, nearby_spheres_c);
 
 			num_near_by_spheres = num_nearby_spheres_s + num_nearby_spheres_e + num_nearby_spheres_c;
@@ -3575,17 +3579,14 @@ int MeshingVoroCrustSampler::generate_surface_seeds(size_t num_points, double** 
 	return 0;
 	#pragma endregion
 }
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool MeshingVoroCrustSampler::validate_surface_mesh(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, size_t num_faces, size_t** faces)
 {
 	#pragma region Validate VC Surface Mesh:
 	size_t ns = surface_spheres->get_num_tree_points();
-	size_t ne = edge_spheres->get_num_tree_points();
-	size_t nc = corner_spheres->get_num_tree_points();
 
-	size_t num_points = ns + ne + nc;
+	size_t num_points = ns;
 	double** points = new double*[num_points];
 	for (size_t i = 0; i < num_points; i++) points[i] = new double[3];
 
@@ -3593,8 +3594,6 @@ bool MeshingVoroCrustSampler::validate_surface_mesh(MeshingSmartTree* surface_sp
 	for (size_t i = 0; i < num_points; i++) shrunk[i] = false;
 
 	for (size_t i = 0; i < ns; i++) surface_spheres->get_tree_point(i, points[i]);
-	for (size_t i = 0; i < ne; i++) edge_spheres->get_tree_point(i, points[ns + i]);
-	for (size_t i = 0; i < nc; i++) corner_spheres->get_tree_point(i, points[ns + ne + i]);
 
 	MeshingPolyMesh mesh;
 
@@ -3691,12 +3690,679 @@ bool MeshingVoroCrustSampler::validate_surface_mesh(MeshingSmartTree* surface_sp
 	}
 	else
 	{
-		//mesh.save_mesh_obj("surface_mesh_nonwatertight.obj", num_points, points, num_faces, faces);
+		mesh.save_mesh_obj("surface_mesh_nonwatertight.obj", num_points, points, num_faces, faces);
 		vcm_cout << " *** VoroCrust surface is not topologically equivalent to VoroCrust spheres, Nummber of invalid edges = " << num_single <<  std::endl;
 	}
-
 	for (size_t i = 0; i < num_points; i++) delete[] points[i];
 	delete[] points; delete[] shrunk;
 	return water_tight;
 	#pragma endregion
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static inline bool is_number(const std::string& s, double& out){
+	char* end = nullptr;
+	out = std::strtod(s.c_str(), &end);
+	return end != s.c_str() && *end == '\0' && std::isfinite(out);
+}
+
+void MeshingVoroCrustSampler::generate_spheres(const char* filename, MeshingSmartTree* &spheres)
+{
+	std::ifstream fin(filename);
+	if (!fin) { std::cerr << "open failed: " << filename << "\n"; return; }
+
+	std::string line;
+	if (std::getline(fin, line)) {               // 跳表头（若无表头会回退）
+		if (line.find("x") == std::string::npos) { fin.clear(); fin.seekg(0); }
+	}
+
+	size_t count = 0;
+	while (std::getline(fin, line))
+		{
+		if (line.empty()) continue;
+		for (char& c : line) if (c == ',') c = ' ';
+		std::istringstream ss(line);
+
+		double x,y,z,r,nx,ny,nz;
+		if (!(ss >> x >> y >> z >> r >> nx >> ny >> nz)) continue;
+
+		double s[4] = {x,y,z,r};
+		double norm[3] = {nx,ny,nz};
+		size_t attrib[2] = {2, 0}; // {长度, 来源面索引(占位或真实面号)}
+		spheres->add_tree_point(4, s, /*normal=*/norm, attrib);
+		++count;
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int MeshingVoroCrustSampler::generate_surface_seeds(size_t num_points, double** points, size_t num_faces, size_t** faces, MeshingSmartTree* spheres, double Lip, bool& shrunk_s, MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds)
+{
+	#pragma region Generate Surface Seeds:
+	upper_seeds->clear_memory(); lower_seeds->clear_memory();
+	shrunk_s = false;
+	size_t num_spheres = spheres->get_num_tree_points();
+
+	double* sphere = new double[4];
+
+	double* sphere_i = new double[4];
+	double* sphere_j = new double[4];
+	double* sphere_k = new double[4];
+
+	double* c_ijk = new double[3];
+	double** centers = new double*[3];
+	double* radii = new double[3];
+	double* triplet_normal = new double[3];
+	double* upper_seed = new double[4];
+	double* lower_seed = new double[4];
+
+	size_t* attrib = new size_t[6];
+	attrib[0] = 6; attrib[5] = 0; // Seed Marker
+
+	for (size_t isphere = 0; isphere < num_spheres; isphere++)
+	{
+		#pragma region Form intersection Pairs:
+		size_t sphere_index_i(isphere);
+		spheres->get_tree_point(isphere, 4, sphere_i);
+
+		size_t num_near_by_spheres(0); size_t* near_by_spheres(nullptr);
+
+
+		_smethods.get_overlapping_spheres(sphere_i, spheres, Lip, num_near_by_spheres, near_by_spheres);
+
+		for (size_t jsphere = 0; jsphere < num_near_by_spheres; jsphere++)
+		{
+			size_t sphere_index_j = near_by_spheres[jsphere];
+			if (sphere_index_j <= sphere_index_i) continue;
+
+			spheres->get_tree_point(sphere_index_j, 4, sphere_j);
+
+			double dst_ij = _geom.distance(3, sphere_i, sphere_j);
+
+			if (dst_ij > sphere_i[3] + sphere_j[3] - 1E-10) continue;
+
+			for (size_t ksphere = 0; ksphere < num_near_by_spheres; ksphere++)
+			{
+				size_t sphere_index_k = near_by_spheres[ksphere];
+				if (sphere_index_k <= sphere_index_i) continue;
+				if (sphere_index_k <= sphere_index_j) continue;
+
+				spheres->get_tree_point(sphere_index_k, 4, sphere_k);
+
+				double dst_ik = _geom.distance(3, sphere_i, sphere_k);
+				if (dst_ik > sphere_i[3] + sphere_k[3] - 1E-10) continue;
+
+				double dst_jk = _geom.distance(3, sphere_j, sphere_k);
+				if (dst_jk > sphere_j[3] + sphere_k[3] - 1E-10) continue;
+
+				// Three overlapping spheres
+				centers[0] = sphere_i; centers[1] = sphere_j; centers[2] = sphere_k;
+				radii[0] = sphere_i[3]; radii[1] = sphere_j[3]; radii[2] = sphere_k[3];
+				_geom.get_power_vertex(3, 3, centers, radii, c_ijk);
+
+				double hi = _geom.distance(3, c_ijk, sphere_i);
+				if (hi > sphere_i[3] - 1E-10) continue;
+
+				double vi = sqrt(sphere_i[3] * sphere_i[3] - hi * hi);
+
+				// Three overlapping spheres with an intersection pair
+				double area = _geom.get_3d_triangle_area(centers);
+
+				if (area < 1E-10)
+					continue; // spheres are colinear
+
+				_geom.get_3d_triangle_normal(centers, triplet_normal);
+
+				// adjust triplet normal
+
+				double* n =spheres->get_tree_point_normal(isphere);
+				double* fi_normal = new double[3];
+				fi_normal[0] = n[0]; fi_normal[1] = n[1]; fi_normal[2] = n[2];
+
+				double dot = _geom.dot_product(3, fi_normal, triplet_normal);
+				delete[] fi_normal;
+				if (dot < 0.0)
+				{
+					attrib[2] = sphere_index_i;
+					attrib[3] = sphere_index_k;
+					attrib[4] = sphere_index_j;
+					for (size_t idim = 0; idim < 3; idim++) triplet_normal[idim] = -triplet_normal[idim];
+				}
+				else
+				{
+					attrib[2] = sphere_index_i;
+					attrib[3] = sphere_index_j;
+					attrib[4] = sphere_index_k;
+				}
+
+				for (size_t idim = 0; idim < 3; idim++)
+				{
+					upper_seed[idim] = c_ijk[idim] + vi * triplet_normal[idim];
+					lower_seed[idim] = c_ijk[idim] - vi * triplet_normal[idim];
+				}
+
+				size_t num(0), cap(10);
+				size_t* covering_spheres = new size_t[cap];
+
+				size_t si(sphere_index_i), sj(sphere_index_j), sk(sphere_index_k);
+				bool upper_covered = _mesh.point_covered(upper_seed, spheres, Lip, 0.0, si, sj, sk, num, cap, covering_spheres);
+				bool lower_covered = _mesh.point_covered(lower_seed, spheres, Lip, 0.0, si, sj, sk, num, cap, covering_spheres);
+
+
+				if (!upper_covered && !lower_covered)
+				{
+					#pragma region A valid Intersection Pairs:
+					size_t iclosest; double hclosest(DBL_MAX);
+					size_t upper_seed_index(upper_seeds->get_num_tree_points());
+					size_t lower_seed_index(lower_seeds->get_num_tree_points());
+
+					lower_seeds->get_closest_tree_point(lower_seed, iclosest, hclosest);
+					if (hclosest < 1E-10) lower_seed_index = iclosest;
+
+					hclosest = DBL_MAX;
+					upper_seeds->get_closest_tree_point(upper_seed, iclosest, hclosest);
+					if (hclosest < 1E-10) upper_seed_index = iclosest;
+
+					if (lower_seed_index == lower_seeds->get_num_tree_points())
+					{
+						lower_seed[3] = fmin(sphere_i[3], sphere_j[3]);
+						lower_seed[3] = fmin(lower_seed[3], sphere_k[3]);
+
+						attrib[1] = upper_seed_index;
+						lower_seeds->add_tree_point(4, lower_seed, triplet_normal, attrib);
+					}
+
+					if (upper_seed_index == upper_seeds->get_num_tree_points())
+					{
+						upper_seed[3] = fmin(sphere_i[3], sphere_j[3]);
+						upper_seed[3] = fmin(upper_seed[3], sphere_k[3]);
+
+						attrib[1] = lower_seed_index;
+						upper_seeds->add_tree_point(4, upper_seed, triplet_normal, attrib);
+					}
+					#pragma endregion
+				}
+
+				delete[] covering_spheres;
+			}
+		}
+		delete[] near_by_spheres;
+		#pragma endregion
+	}
+
+	delete[] sphere;
+	delete[] sphere_i; delete[] sphere_j; delete[] sphere_k;
+	delete[] c_ijk; delete[] centers; delete[] radii;
+	delete[] triplet_normal; delete[] upper_seed; delete[] lower_seed;
+	delete[] attrib;
+
+
+	vcm_cout << "  * No sliver spheres were detected!" << std::endl;
+
+	// report min distance between upper seeds, lower seeds, lower and upper seeds
+
+	bool* shrink_sphere = new bool[num_spheres];
+	for (size_t i = 0; i < num_spheres; i++) shrink_sphere[i] = false;
+
+	double min_dst_uu(DBL_MAX), min_dst_ll(DBL_MAX), min_dst_ul(DBL_MAX);
+	size_t num_upper_seeds = upper_seeds->get_num_tree_points();
+	size_t num_lower_seeds = lower_seeds->get_num_tree_points();
+	for (size_t iseed = 0; iseed < num_upper_seeds; iseed++)
+	{
+		size_t* attrib = upper_seeds->get_tree_point_attrib(iseed);
+		size_t si(attrib[2]), sj(attrib[3]), sk(attrib[4]);
+		double min_radius(DBL_MAX);
+		if (si < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(si);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+		if (sj < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(sj);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+		if (sk < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(sk);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+
+		size_t iclosest(iseed); double hclosest(DBL_MAX);
+		upper_seeds->get_closest_tree_point(iseed, iclosest, hclosest);
+		hclosest /= min_radius;
+
+		if (hclosest < min_dst_uu) min_dst_uu = hclosest;
+
+		if (hclosest < 1E-2)
+		{
+			// shrink surface spheres associated with this pair
+			shrunk_s = true;
+			if (si < num_spheres) shrink_sphere[si] = true;
+			if (sj < num_spheres) shrink_sphere[sj] = true;
+			if (sk < num_spheres) shrink_sphere[sk] = true;
+		}
+
+		double* seed = upper_seeds->get_tree_point(iseed);
+		size_t jclosest = num_lower_seeds; double vclosest = DBL_MAX;
+		lower_seeds->get_closest_tree_point(seed, jclosest, vclosest);
+		vclosest /= min_radius;
+		if (vclosest < min_dst_ul) min_dst_ul = vclosest;
+	}
+
+	for (size_t iseed = 0; iseed < num_lower_seeds; iseed++)
+	{
+		size_t* attrib = lower_seeds->get_tree_point_attrib(iseed);
+		size_t si(attrib[2]), sj(attrib[3]), sk(attrib[4]);
+		double min_radius(DBL_MAX);
+		if (si < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(si);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+		if (sj < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(sj);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+		if (sk < num_spheres)
+		{
+			double* sphere = spheres->get_tree_point(sk);
+			if (sphere[3] < min_radius) min_radius = sphere[3];
+		}
+
+		size_t iclosest(iseed); double hclosest(DBL_MAX);
+		lower_seeds->get_closest_tree_point(iseed, iclosest, hclosest);
+		hclosest /= min_radius;
+		if (hclosest < min_dst_ll) min_dst_ll = hclosest;
+
+		if (hclosest < 1E-2)
+		{
+			// shrink surface spheres associated with this pair
+			shrunk_s = true;
+			if (si < num_spheres) shrink_sphere[si] = true;
+			if (sj < num_spheres) shrink_sphere[sj] = true;
+			if (sk < num_spheres) shrink_sphere[sk] = true;
+		}
+
+		double* seed = lower_seeds->get_tree_point(iseed);
+		size_t jclosest = num_lower_seeds; double vclosest = DBL_MAX;
+		upper_seeds->get_closest_tree_point(seed, jclosest, vclosest);
+		vclosest /= min_radius;
+		if (vclosest < min_dst_ul) min_dst_ul = vclosest;
+	}
+
+	vcm_cout << "  * Min. relative distance between upper seeds = " << min_dst_uu << std::endl;
+	vcm_cout << "  * Min. relative distance between lower seeds = " << min_dst_ll << std::endl;
+	vcm_cout << "  * Min. relative distance between lower and upper seeds = " << min_dst_ul << std::endl;
+
+	size_t num_surf_faces = upper_seeds->get_num_tree_points();
+	size_t** surf_faces = new size_t*[num_surf_faces];
+	for (size_t iface = 0; iface < num_surf_faces; iface++)
+	{
+		size_t* attrib = upper_seeds->get_tree_point_attrib(iface);
+		surf_faces[iface] = new size_t[4];
+		surf_faces[iface][0] = 3;
+		surf_faces[iface][1] = attrib[2];
+		surf_faces[iface][2] = attrib[3];
+		surf_faces[iface][3] = attrib[4];
+	}
+	bool water_tight = validate_surface_mesh(spheres, 0, 0, num_surf_faces, surf_faces);
+	for (size_t iface = 0; iface < num_surf_faces; iface++) delete[] surf_faces[iface];
+	delete[] surf_faces;
+	return 0;
+	#pragma endregion
+}
+
+
+
+// ===== 小工具：无序边的规范化 key =====
+static inline uint64_t canon_edge_key(size_t a, size_t b) {
+    if (a > b) std::swap(a, b);
+    return (uint64_t(a) << 32) | uint64_t(b);
+}
+
+// ===== 把 (si,sj,sk) 旋到以 isphere 为锚点 =====
+static inline bool rotate_until_anchor(size_t isphere, size_t &si, size_t &sj, size_t &sk) {
+    for (int t = 0; t < 3; ++t) {
+        if (si == isphere) return true;
+        size_t tmp = si; si = sj; sj = sk; sk = tmp;
+    }
+    return (si == isphere);
+}
+
+// ===== 检测某球周围的“邻居环”（只用原接口） =====
+// 输出 loops：若干环；每环是邻居球 id 的按序序列（首尾相接）
+size_t MeshingVoroCrustSampler::detect_loops_around_sphere(
+    size_t isphere,
+    MeshingSmartTree* spheres,
+    MeshingSmartTree* seeds,
+    std::vector<std::vector<size_t>>& loops // 输出
+){
+    loops.clear();
+
+    // 1) 拉取该球的相邻 seeds
+    size_t* sphere_seeds = nullptr;
+    spheres->graph_get_neighbors(isphere, sphere_seeds);
+    if (!sphere_seeds) return 0;
+    const size_t m = sphere_seeds[1];
+
+    // 2) 建边集：每个三球三角 -> 无向边 {sj,sk}（去重）
+    std::unordered_map<size_t, std::vector<size_t>> adj;
+    std::unordered_set<uint64_t> E;
+    for (size_t i = 0; i < m; ++i) {
+        size_t seed = sphere_seeds[2 + i];
+        size_t* attrib = seeds->get_tree_point_attrib(seed);
+        size_t si = attrib[2], sj = attrib[3], sk = attrib[4];
+        if (!rotate_until_anchor(isphere, si, sj, sk)) continue;
+        if (sj == sk) continue;
+        const uint64_t key = canon_edge_key(sj, sk);
+        if (E.insert(key).second) {
+            adj[sj].push_back(sk);
+            adj[sk].push_back(sj);
+        }
+    }
+
+    // 3) 沿未使用的边追环
+    std::unordered_set<uint64_t> used;
+    for (auto& kv : adj) {
+        size_t start = kv.first;
+        for (size_t nb : kv.second) {
+            uint64_t k = canon_edge_key(start, nb);
+            if (used.count(k)) continue;
+
+            std::vector<size_t> loop;
+            size_t prev = start, curr = nb;
+            used.insert(k);
+            loop.push_back(start);
+
+            while (true) {
+                loop.push_back(curr);
+                // 找下一个（避开回边）
+                size_t nxt = SIZE_MAX;
+                auto it2 = adj.find(curr);
+                if (it2 != adj.end()) {
+                    for (size_t cand : it2->second) {
+                        if (cand == prev) continue;
+                        uint64_t kk = canon_edge_key(curr, cand);
+                        if (!used.count(kk)) { nxt = cand; break; }
+                    }
+                }
+                if (nxt == SIZE_MAX) {
+                    // 只有回到起点才算闭环
+                    if (curr == start && loop.size() >= 3) { /* ok */ }
+                    else loop.clear();
+                    break;
+                }
+                used.insert(canon_edge_key(curr, nxt));
+                prev = curr;
+                curr = nxt;
+                if (curr == start) { loop.push_back(start); break; }
+            }
+
+            if (!loop.empty()) {
+                if (loop.size() >= 2 && loop.front() == loop.back()) loop.pop_back();
+                if (loop.size() >= 3) loops.push_back(std::move(loop));
+            }
+        }
+    }
+    return loops.size();
+}
+
+// ===== 主流程：统一的 color + 连接 + 分区着色 + ghost 剔除 =====
+int MeshingVoroCrustSampler::color_surface_seeds(
+    MeshingSmartTree* spheres,
+    MeshingSmartTree* seeds,
+    MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds,
+    size_t            num_spheres,
+    size_t&           num_subregions
+){
+
+	// merging seeds into one Tree
+
+	size_t num_upper_seeds(upper_seeds->get_num_tree_points());
+	size_t num_lower_seeds(lower_seeds->get_num_tree_points());
+
+	// adjust id of seed pair for upper seeds
+	for (size_t iseed = 0; iseed < num_upper_seeds; iseed++)
+	{
+		// copy point location, normal and attributes
+		double* x = upper_seeds->get_tree_point(iseed);
+		double* normal = upper_seeds->get_tree_point_normal(iseed);
+		size_t* attrib = upper_seeds->get_tree_point_attrib(iseed);
+		attrib[1] += num_upper_seeds;
+		seeds->add_tree_point(4, x, normal, attrib);
+	}
+	upper_seeds->clear_memory();
+
+	for (size_t iseed = 0; iseed < num_lower_seeds; iseed++)
+	{
+		// copy point location, normal and attributes
+		double* x = lower_seeds->get_tree_point(iseed);
+		double* normal = lower_seeds->get_tree_point_normal(iseed);
+		size_t* attrib = lower_seeds->get_tree_point_attrib(iseed);
+		seeds->add_tree_point(4, x, normal, attrib);
+	}
+	lower_seeds->clear_memory();
+
+	size_t num_seeds(seeds->get_num_tree_points());
+	for (size_t iseed = 0; iseed < num_seeds; iseed++)
+	{
+		// Establish Sphere -> Seeds directional graph
+		size_t* attrib = seeds->get_tree_point_attrib(iseed);
+		size_t si(attrib[2]), sj(attrib[3]), sk(attrib[4]);
+		spheres->graph_connect(si, iseed); spheres->graph_connect(sj, iseed); spheres->graph_connect(sk, iseed);
+	}
+    // —— 每颗球独立处理：检测环，按规则临时打标并连边 —— //
+    for (size_t isphere = 0; isphere < num_spheres; ++isphere) {
+
+        // 取该球的邻接 seeds
+        size_t* sphere_seeds = nullptr;
+        spheres->graph_get_neighbors(isphere, sphere_seeds);
+        if (!sphere_seeds) continue;
+        const size_t m = sphere_seeds[1];
+
+        // 清零临时标签
+        for (size_t i = 0; i < m; ++i) {
+            size_t seed_i = sphere_seeds[2 + i];
+            size_t* attrib = seeds->get_tree_point_attrib(seed_i);
+            attrib[5] = 0;
+        }
+
+        // 建 edge->seeds 映射（同一三角的两颗 seed 会落到同一 key）
+        std::unordered_map<uint64_t, std::vector<size_t>> edge2seeds;
+        edge2seeds.reserve(m);
+        for (size_t i = 0; i < m; ++i) {
+            size_t seed = sphere_seeds[2 + i];
+            size_t* attrib = seeds->get_tree_point_attrib(seed);
+            size_t si = attrib[2], sj = attrib[3], sk = attrib[4];
+            if (!rotate_until_anchor(isphere, si, sj, sk)) continue;
+            const uint64_t key = canon_edge_key(sj, sk);
+            edge2seeds[key].push_back(seed);
+        }
+
+        // 检测环
+        std::vector<std::vector<size_t>> loops;
+        const size_t L = detect_loops_around_sphere(isphere, spheres, seeds, loops);
+
+        if (L <= 1) {
+            // —— Surface 行为：按法向给每个三角 pair 标 inside(1)/outside(2) —— //
+            if (!loops.empty()) {
+                const auto& cyc = loops[0];
+                const size_t kN = cyc.size();
+                for (size_t t = 0; t < kN; ++t) {
+                    size_t sj = cyc[t];
+                    size_t sk = cyc[(t + 1) % kN];
+                    const uint64_t key = canon_edge_key(sj, sk);
+                    auto it = edge2seeds.find(key);
+                    if (it == edge2seeds.end()) continue;
+
+                    const std::vector<size_t>& seeds_on_edge = it->second;
+                    for (size_t seed : seeds_on_edge) {
+                        size_t* attr1 = seeds->get_tree_point_attrib(seed);
+                        if (attr1[5] != 0) continue; // 已标过
+                        size_t pair_seed = attr1[1];
+                        size_t* attr2 = seeds->get_tree_point_attrib(pair_seed);
+
+                        // face corners: (si=isphere, sj, sk)
+                        size_t si = attr1[2], sj1 = attr1[3], sk1 = attr1[4];
+                        if (!rotate_until_anchor(isphere, si, sj1, sk1)) continue;
+
+                        double* face_corners[3];
+                        face_corners[0] = spheres->get_tree_point(si);
+                        face_corners[1] = spheres->get_tree_point(sj1);
+                        face_corners[2] = spheres->get_tree_point(sk1);
+
+                        double n[3]; _geom.get_3d_triangle_normal(face_corners, n);
+
+                        double* x1 = seeds->get_tree_point(seed);
+                        double* x2 = seeds->get_tree_point(pair_seed);
+                        double dot = (x2[0] - x1[0]) * n[0]
+                                   + (x2[1] - x1[1]) * n[1]
+                                   + (x2[2] - x1[2]) * n[2];
+
+                        if (dot > 0.0) { attr1[5] = 1; attr2[5] = 2; }
+                        else           { attr1[5] = 2; attr2[5] = 1; }
+                    }
+                }
+            } else {
+                // 没闭环：保守策略——逐三角按法向打 inside/outside
+                for (size_t i = 0; i < m; ++i) {
+                    size_t seed = sphere_seeds[2 + i];
+                    size_t* attr1 = seeds->get_tree_point_attrib(seed);
+                    if (attr1[5] != 0) continue;
+                    size_t pair_seed = attr1[1];
+                    size_t* attr2 = seeds->get_tree_point_attrib(pair_seed);
+
+                    size_t si = attr1[2], sj = attr1[3], sk = attr1[4];
+                    if (!rotate_until_anchor(isphere, si, sj, sk)) continue;
+
+                    double* face_corners[3];
+                    face_corners[0] = spheres->get_tree_point(si);
+                    face_corners[1] = spheres->get_tree_point(sj);
+                    face_corners[2] = spheres->get_tree_point(sk);
+
+                    double n[3]; _geom.get_3d_triangle_normal(face_corners, n);
+                    double* x1 = seeds->get_tree_point(seed);
+                    double* x2 = seeds->get_tree_point(pair_seed);
+                    double dot = (x2[0]-x1[0])*n[0] + (x2[1]-x1[1])*n[1] + (x2[2]-x1[2])*n[2];
+                    if (dot > 0.0) { attr1[5] = 1; attr2[5] = 2; }
+                    else           { attr1[5] = 2; attr2[5] = 1; }
+                }
+            }
+        } else {
+            // —— Edge 行为：按环号（1..L）给该环上的所有三角 pair 打标签 —— //
+            for (size_t lid = 0; lid < L; ++lid) {
+                const auto& cyc = loops[lid];
+                const size_t kN = cyc.size();
+                for (size_t t = 0; t < kN; ++t) {
+                    size_t sj = cyc[t];
+                    size_t sk = cyc[(t + 1) % kN];
+                    const uint64_t key = canon_edge_key(sj, sk);
+                    auto it = edge2seeds.find(key);
+                    if (it == edge2seeds.end()) continue;
+
+                    const std::vector<size_t>& seeds_on_edge = it->second;
+                    for (size_t seed : seeds_on_edge) {
+                        size_t* attr1 = seeds->get_tree_point_attrib(seed);
+                        if (attr1[5] != 0) continue; // 已标过
+                        size_t pair_seed = attr1[1];
+                        size_t* attr2 = seeds->get_tree_point_attrib(pair_seed);
+                        attr1[5] = (lid + 1);
+                        attr2[5] = (lid + 1);
+                    }
+                }
+            }
+        }
+
+        // —— 在本球邻接集合内：同标签连边 —— //
+        for (size_t i = 0; i < m; ++i) {
+            size_t u = sphere_seeds[2 + i];
+            size_t* au = seeds->get_tree_point_attrib(u);
+            if (au[5] == 0) continue;
+            for (size_t j = i + 1; j < m; ++j) {
+                size_t v = sphere_seeds[2 + j];
+                size_t* av = seeds->get_tree_point_attrib(v);
+                if (au[5] == av[5]) {
+                    seeds->graph_connect_nodes(u, v);
+                }
+            }
+        }
+
+        // —— 清零临时标签 —— //
+        for (size_t i = 0; i < m; ++i) {
+            size_t seed_i = sphere_seeds[2 + i];
+            size_t* attrib = seeds->get_tree_point_attrib(seed_i);
+            attrib[5] = 0;
+        }
+    }
+
+    // —— 连通子图着色（沿用原逻辑） —— //
+    size_t region_id = 0;
+    while (true) {
+        bool done = true;
+        for (size_t iseed = 0; iseed < num_seeds; ++iseed) {
+            size_t* attrib = seeds->get_tree_point_attrib(iseed);
+            if (attrib[5] != 0) continue;
+            region_id++; attrib[5] = region_id;
+            done = false;
+            break;
+        }
+        if (done) break;
+
+        // 泛洪
+        while (true) {
+            bool sub_done = true;
+            for (size_t iseed = 0; iseed < num_seeds; ++iseed) {
+                size_t* attrib = seeds->get_tree_point_attrib(iseed);
+                if (attrib[5] != region_id) continue;
+
+                size_t* neigh = nullptr;
+                seeds->graph_get_neighbors(iseed, neigh);
+                if (!neigh) continue;
+                size_t k = neigh[1];
+                for (size_t i = 0; i < k; ++i) {
+                    size_t v = neigh[2 + i];
+                    size_t* av = seeds->get_tree_point_attrib(v);
+                    if (av[5] == 0) { av[5] = region_id; sub_done = false; }
+                    else if (av[5] != region_id) {
+                        vcm_cout << "Error::Invalid coloring!!!" << std::endl;
+                    }
+                }
+            }
+            if (sub_done) break;
+        }
+    }
+    num_subregions = (region_id > 0 ? region_id - 1 : 0);
+
+    // —— ghost 区域剔除（沿用原逻辑） —— //
+    {
+        double xmin[3] = { DBL_MAX, DBL_MAX, DBL_MAX };
+        double xmax[3] = { -DBL_MAX, -DBL_MAX, -DBL_MAX };
+        for (size_t iseed = 0; iseed < num_seeds; ++iseed) {
+            double* p = seeds->get_tree_point(iseed);
+            xmin[0] = std::min(xmin[0], p[0]); xmin[1] = std::min(xmin[1], p[1]); xmin[2] = std::min(xmin[2], p[2]);
+            xmax[0] = std::max(xmax[0], p[0]); xmax[1] = std::max(xmax[1], p[1]); xmax[2] = std::max(xmax[2], p[2]);
+        }
+        // 远点（盒对角外延）选最近种子所在的 region 视作 ghost
+        xmax[0] += 2.0 * (xmax[0] - xmin[0]);
+        xmax[1] += 2.0 * (xmax[1] - xmin[1]);
+        xmax[2] += 2.0 * (xmax[2] - xmin[2]);
+
+        size_t iclosest = 0; double hclosest = DBL_MAX;
+        seeds->get_closest_tree_point(xmax, iclosest, hclosest);
+
+        size_t ghost_id = seeds->get_tree_point_attrib(iclosest)[5];
+        for (size_t iseed = 0; iseed < num_seeds; ++iseed) {
+            size_t* a = seeds->get_tree_point_attrib(iseed);
+            if (a[5] == ghost_id) a[5] = 0;
+        }
+        for (size_t iseed = 0; iseed < num_seeds; ++iseed) {
+            size_t* a = seeds->get_tree_point_attrib(iseed);
+            if (a[5] > ghost_id) a[5]--;
+        }
+    }
+
+    return 0;
 }

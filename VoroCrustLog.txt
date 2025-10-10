@@ -1,0 +1,46 @@
+***********************************************************
+*                                                         *
+*  Program    : VoroCrust                                 *
+*  Version    : Development Branch                        *
+*  Git SHA1   : UNKNOWN                                   *
+*  Commit Date: UNKNOWN                                   *
+*  Run Date   : 2025-10-10 12:37:34 +0000                 *
+*  Website    : https://vorocrust.sandia.gov              *
+*                                                         *
+***********************************************************
+MeshingVoroCrust::Input Data:
+  * Input Mesh = /home/yiming/research/vorocrust-meshing/tests/datasets/Mobius/mobius1.obj
+    Minimum Sphere Radius = 0
+    Maximum Sphere Radius = 10000
+    Lipschitz Const = 0.25
+    VC Smooth Angle Threshold = 80
+    A clean input model 
+    Number of OpenMP threads = 64
+VoroCrust::Reading obj file:
+  * Number of Input mesh points = 21373
+  * Number of Input mesh faces = 42746
+VoroCrust::Initiating VoroCrust Sampler .. 
+  * VoroCrust is using 64 / 128 available threads!
+VoroCrust::Feature Detection and Point Clouds Generation (Clean Input):
+  * Number of Sharp Corners = 0
+  * Number of Sharp Edges = 0
+  * executed in 1.65873 seconds!
+  * No sliver spheres were detected!
+  * Min. relative distance between upper seeds = 0.0330089
+  * Min. relative distance between lower seeds = 0.00163324
+  * Min. relative distance between lower and upper seeds = 0.00129484
+ *** VoroCrust surface is not topologically equivalent to VoroCrust spheres, Nummber of invalid edges = 24
+MeshingVoroCrust::Generating Interior Seeds:
+  * Number of seeds 6010
+  * Number of seeds 7213
+  * Number of seeds 7246
+  * Number of iterations = 193
+  * Deactivation time = 0.0657817
+  * Spoke throwing time = 0.0412097
+  * Lipschitz time = 0.00362369
+  * Seed update time = 0
+  * All seeds are stored in seeds.csv, saved in 0.197066 seconds!
+  * Number of added seeds 1236
+  * executed in 0.197085 seconds!
+
+*** MeshingVoroCrust::Mission Accomplished in 1.51967 seconds! ***

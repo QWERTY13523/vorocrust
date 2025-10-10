@@ -39,7 +39,9 @@
 #define _VOROCRUST_SAMPLER_H_
 
 #include <cmath>
+#include<unordered_set>
 #include <vector>
+#include<unordered_map>
 #include <list>
 #include <utility>
 #include <stack>
@@ -54,11 +56,14 @@
 
 #include <iostream>
 #include <fstream>
+#include <cctype>
+#include <cmath>
+#include <iostream>
 #include <sstream>
-#include <string.h>
+#include <cstring>
 #include <iomanip>
 
-#include <time.h>
+#include <ctime>
 
 #include "MeshingCommon.h"
 #include "MeshingPolyMesh.h"
@@ -115,6 +120,22 @@ public:
 
 	int color_surface_seeds(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds,
 		                    MeshingSmartTree* spheres, MeshingSmartTree* seeds, size_t &num_subregions);
+
+	int color_surface_seeds( MeshingSmartTree* spheres, MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds, MeshingSmartTree* seeds, size_t &num_subregions);
+
+	void generate_spheres(const char* filename, MeshingSmartTree* &spheres);
+
+	int generate_surface_seeds(size_t num_points, double** points, size_t num_faces, size_t** faces,
+						   MeshingSmartTree* spheres,
+						   double Lip, bool &shrunk_s,
+						   MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds);
+
+	int color_surface_seeds(
+		MeshingSmartTree* spheres,
+		MeshingSmartTree* seeds,MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds,
+		size_t            num_spheres,
+		size_t&           num_subregions);
+
 	
 private:
 
@@ -164,9 +185,19 @@ private:
 		                       double Lip, bool &shrunk_s,
 		                       MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds);
 
+
+
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	bool validate_surface_mesh(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, size_t num_faces, size_t** faces);
+
+	size_t detect_loops_around_sphere(
+	size_t isphere,
+	MeshingSmartTree* spheres,
+	MeshingSmartTree* seeds,
+	std::vector<std::vector<size_t>>& loops // 输出
+);
+
 
 private:
 

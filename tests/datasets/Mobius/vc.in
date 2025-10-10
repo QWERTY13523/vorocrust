@@ -1,4 +1,4 @@
-INPUT_MESH_FILE = /home/yiming/research/vorocrust-meshing/tests/datasets/Leaf/leaf.obj
+INPUT_MESH_FILE = /home/yiming/research/vorocrust-meshing/tests/datasets/Mobius/mobius1.obj
 NUM_LOOP_REF = 0
 REF_ANGLE = 180.0
 R_MAX = 10000.0

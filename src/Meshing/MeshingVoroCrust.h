@@ -123,6 +123,10 @@ private:
 
 	int get_tokens(std::string line, char separator, std::vector<std::string>& tokens);
 
+	int generate_interior_seeds(MeshingSmartTree* seeds_tree, MeshingSmartTree* spheres_tree,
+							MeshingSmartTree* sz_function_tree, int num_threads, double Lip, double rmax,
+							bool impose_monitoring_points, bool generate_monitoring_points,
+							size_t& num_seeds, double*& seeds, size_t*& seeds_region_id, double*& seeds_sizing);
 
 	MeshingRandomSampler _rsampler;
 	MeshingMemoryHandler _memo;
