@@ -118,6 +118,12 @@ public:
 		                         MeshingSmartTree* &ext_surf_seeds, MeshingSmartTree* &int_surf_seeds,
 		                         double smooth_angle_threshold, double rmax, double Lip, double coverage_radius_ratio);
 
+	int generate_surface_spheres(size_t num_points, double** points, size_t num_faces, size_t** faces,
+								 MeshingSmartTree* surface_point_cloud, MeshingSmartTree* edge_point_cloud, double rmin,
+								 MeshingSmartTree* &spheres,
+								 MeshingSmartTree* &ext_surf_seeds, MeshingSmartTree* &int_surf_seeds,
+								 double smooth_angle_threshold, double rmax, double Lip, double coverage_radius_ratio);
+
 	int color_surface_seeds(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, MeshingSmartTree* upper_seeds, MeshingSmartTree* lower_seeds,
 		                    MeshingSmartTree* spheres, MeshingSmartTree* seeds, size_t &num_subregions);
 
@@ -136,7 +142,7 @@ public:
 		size_t            num_spheres,
 		size_t&           num_subregions);
 
-	
+	bool validate_surface_mesh(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, size_t num_faces, size_t** faces);
 private:
 
 	int clear_memory();
@@ -189,7 +195,7 @@ private:
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	bool validate_surface_mesh(MeshingSmartTree* surface_spheres, MeshingSmartTree* edge_spheres, MeshingSmartTree* corner_spheres, size_t num_faces, size_t** faces);
+
 
 	size_t detect_loops_around_sphere(
 	size_t isphere,

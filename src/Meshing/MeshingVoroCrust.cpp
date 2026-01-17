@@ -36,6 +36,8 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "MeshingVoroCrust.h"
+#include "MeshingVoroCrustSampler.h"
+
 
 
 MeshingVoroCrust::MeshingVoroCrust(std::string input_filename)
@@ -234,6 +236,174 @@ int MeshingVoroCrust::execute()
 	#pragma endregion
 }
 
+static void dump_csv(const std::string& path, MeshingSmartTree* tree) {
+	std::ofstream out(path.c_str());
+	out.imbue(std::locale::classic());     // 保证小数点为'.'
+	out << "x,y,z\n";                      // 表头
+	if (!tree) return;
+
+	const size_t n = tree->get_num_tree_points();
+	double p[4];
+	out << std::setprecision(17);
+	for (size_t i = 0; i < n; ++i) {
+		// 点格式通常为 [x,y,z,r]，这里只输出前三列
+		tree->get_tree_point(i, 4, p);
+		out << p[0] << "," << p[1] << "," << p[2] << "\n";
+	}
+}
+
+static void dump_seed_center_edges_obj(const std::string& path,
+                                                   MeshingSmartTree* seeds_tree,
+                                                   MeshingSmartTree* spheres_tree)
+{
+    if (!seeds_tree || !spheres_tree) return;
+
+    std::ofstream out(path.c_str());
+    out.imbue(std::locale::classic());
+    out.setf(std::ios::fixed);
+    out << std::setprecision(17);
+
+    const size_t ns = seeds_tree->get_num_tree_points();
+    const size_t nb = spheres_tree->get_num_tree_points();
+
+    // 每个 seed 的 OBJ 顶点 id（1-based）
+    std::vector<size_t> seed_vid(ns, 0);
+    // 球心索引 -> OBJ 顶点 id（1-based）去重
+    std::unordered_map<size_t, size_t> center_vid;
+    center_vid.reserve(nb / 2 + 1);
+
+    size_t vcount = 0; // OBJ 顶点计数
+    double P[4], C[4];
+
+    // 1) 先写所有 seed 顶点
+    for (size_t i = 0; i < ns; ++i) {
+        if (seeds_tree->get_tree_point(i, 4, P) != 0) continue; // 保护
+        out << "v " << P[0] << " " << P[1] << " " << P[2] << "\n";
+        seed_vid[i] = ++vcount;
+    }
+
+    // 2) 为每个 seed 连向 attrib[2..4] 对应的球心
+    for (size_t i = 0; i < ns; ++i) {
+        size_t* attrib = seeds_tree->get_tree_point_attrib(i);
+        if (!attrib) continue;                  // 无属性则跳过
+        const size_t gen_ids[3] = { attrib[2], attrib[3], attrib[4] };
+
+        for (int k = 0; k < 3; ++k) {
+            const size_t j = gen_ids[k];
+            if (j >= nb) continue;              // 越界保护
+
+            // 若该球心尚未写入，则写一个 v 并记录其 id
+            size_t vc;
+            auto it = center_vid.find(j);
+            if (it == center_vid.end()) {
+                if (spheres_tree->get_tree_point(j, 4, C) != 0) continue;
+                out << "v " << C[0] << " " << C[1] << " " << C[2] << "\n";
+                vc = ++vcount;
+                center_vid.emplace(j, vc);
+            } else {
+                vc = it->second;
+            }
+
+            // 写线段：seed 顶点 -> 球心顶点
+            if (seed_vid[i] != 0) {
+                out << "l " << seed_vid[i] << " " << vc << "\n";
+            }
+        }
+    }
+
+    out.close();
+}
+
+static void dump_multi_seed_center_edges_obj(
+    const std::string& path,
+    const std::vector<MeshingSmartTree*>& seeds_trees,
+    MeshingSmartTree* spheres_tree)
+{
+    if (!spheres_tree || seeds_trees.empty()) return;
+    for (auto* t : seeds_trees) if (!t) return;
+
+    std::ofstream out(path.c_str());
+    out.imbue(std::locale::classic());
+    out.setf(std::ios::fixed);
+    out << std::setprecision(17);
+
+    // 球心去重：球心索引 j -> OBJ 顶点 id（1-based）
+    const size_t nb = spheres_tree->get_num_tree_points();
+    std::unordered_map<size_t, size_t> center_vid;
+    center_vid.reserve(nb);
+
+    size_t vcount = 0; // 全局 OBJ 顶点计数
+    double P[4], C[4];
+
+    // 每个 seeds tree 的 seed 顶点 id 表
+    std::vector<std::vector<size_t>> all_seed_vids;
+    all_seed_vids.reserve(seeds_trees.size());
+
+    // 第一遍：写所有 seeds 顶点（为方便查看，加组名）
+    for (size_t t = 0; t < seeds_trees.size(); ++t) {
+        MeshingSmartTree* seeds_tree = seeds_trees[t];
+        const size_t ns = seeds_tree->get_num_tree_points();
+        all_seed_vids.emplace_back(ns, 0);
+
+        out << "g seeds_" << t << "\n";
+        for (size_t i = 0; i < ns; ++i) {
+            if (seeds_tree->get_tree_point(i, 4, P) != 0) continue; // 保护
+            out << "v " << P[0] << " " << P[1] << " " << P[2] << "\n";
+            all_seed_vids.back()[i] = ++vcount;
+        }
+    }
+
+    // 第二遍：为每个 seed 连向 attrib[2..4] 对应的球心（球心去重写 v）
+    for (size_t t = 0; t < seeds_trees.size(); ++t) {
+        MeshingSmartTree* seeds_tree = seeds_trees[t];
+        const size_t ns = seeds_tree->get_num_tree_points();
+        const auto& seed_vid = all_seed_vids[t];
+
+        out << "g edges_from_seeds_" << t << "\n";
+        for (size_t i = 0; i < ns; ++i) {
+            size_t* attrib = seeds_tree->get_tree_point_attrib(i);
+            if (!attrib) continue;
+
+            // 按你的数据约定：attrib[2], attrib[3], attrib[4] 为球心索引
+            const size_t gen_ids[3] = { attrib[2], attrib[3], attrib[4] };
+
+            for (int k = 0; k < 3; ++k) {
+                const size_t j = gen_ids[k];
+                if (j >= nb) continue; // 越界保护
+
+                // 确保球心已写入顶点
+                size_t vc;
+                auto it = center_vid.find(j);
+                if (it == center_vid.end()) {
+                    if (spheres_tree->get_tree_point(j, 4, C) != 0) continue;
+                    out << "v " << C[0] << " " << C[1] << " " << C[2] << "\n";
+                    vc = ++vcount;
+                    center_vid.emplace(j, vc);
+                } else {
+                    vc = it->second;
+                }
+
+                // 连线：seed 顶点 -> 球心顶点
+                if (seed_vid[i] != 0) {
+                    out << "l " << seed_vid[i] << " " << vc << "\n";
+                }
+            }
+        }
+    }
+
+    out.close();
+}
+
+// 便捷封装：恰好两棵 seeds tree
+static void dump_two_seed_center_edges_obj(
+    const std::string& path,
+    MeshingSmartTree* seeds_tree_A,
+    MeshingSmartTree* seeds_tree_B,
+    MeshingSmartTree* spheres_tree)
+{
+    std::vector<MeshingSmartTree*> v{seeds_tree_A, seeds_tree_B};
+    dump_multi_seed_center_edges_obj(path, v, spheres_tree);
+}
 
 int MeshingVoroCrust::execute_vc(int num_threads, size_t num_points, double** points, size_t num_faces, size_t** faces, MeshingSmartTree* input_sizing_function,
 	                             double rmin, double rmax, double Lip, double smooth_angle_threshold, bool generate_vcg_file,bool generate_exodus_file,
@@ -276,18 +446,21 @@ int MeshingVoroCrust::execute_vc(int num_threads, size_t num_points, double** po
 	// 	vc_sampler->generate_corner_spheres(num_points, points, num_sharp_corners, sharp_corners, surface_point_cloud, edge_point_cloud, rmin, corner_spheres, smooth_angle_threshold, rmax, Lip);
 	// if (num_sharp_edges > 0)
 	// 	vc_sampler->generate_edge_spheres(num_points, points, num_sharp_edges, sharp_edges, surface_point_cloud, edge_point_cloud, rmin, edge_spheres, corner_spheres, smooth_angle_threshold, rmax, Lip, 0.5);
-	//
-	// vc_sampler->generate_surface_spheres(num_points, points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
 
-	vc_sampler->generate_spheres("Sphere_1500_55.csv", spheres);
+
+
+	vc_sampler->generate_spheres("Sphere_2000_57.csv", spheres);
 	std::cout<<"num of spheres is "<<spheres->get_num_tree_points()<<std::endl;
 	bool sphere_shrunk_slivers = true;
-	vc_sampler->generate_surface_seeds(num_points, points, num_faces, faces, spheres, Lip, sphere_shrunk_slivers, surf_ext_seeds, surf_int_seeds);
-	//vc_sampler->generate_surface_spheres(num_points,points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
-	vc_sampler->color_surface_seeds(spheres, seeds, surf_ext_seeds, surf_int_seeds, spheres->get_num_tree_points(), num_subregions);
-	//vc_sampler->color_surface_seeds(surface_spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, spheres, seeds,num_subregions);
-	//std::cout<<"numbers of seeds " << seeds->get_num_tree_points()<< std::endl;
 
+
+	vc_sampler->generate_surface_seeds(num_points, points, num_faces, faces, spheres, Lip, sphere_shrunk_slivers, surf_ext_seeds, surf_int_seeds);
+	dump_two_seed_center_edges_obj("seed_center_edges_all.obj",  surf_ext_seeds,  surf_int_seeds, spheres);
+	//vc_sampler->generate_surface_spheres(num_points, points, num_faces, faces, surface_point_cloud, edge_point_cloud, rmin, spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, smooth_angle_threshold, rmax, Lip, 0.4);
+	//vc_sampler->color_surface_seeds(spheres, seeds, surf_ext_seeds, surf_int_seeds, spheres->get_num_tree_points(), num_subregions);
+	vc_sampler->color_surface_seeds(spheres, edge_spheres, corner_spheres, surf_ext_seeds, surf_int_seeds, spheres, seeds,num_subregions);
+	//std::cout<<"numbers of seeds " << seeds->get_num_tree_points()<< std::endl;
+	dump_seed_center_edges_obj("seed_center_edges_all.obj",  seeds, spheres);
 	delete surf_ext_seeds; delete surf_int_seeds; delete interface_spheres;
 
 	delete surface_point_cloud; delete edge_point_cloud;

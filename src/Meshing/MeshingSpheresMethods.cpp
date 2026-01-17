@@ -293,7 +293,7 @@ int MeshingSpheresMethods::impose_lipschitz_continuity(MeshingSmartTree* spheres
 
 				bool overlapped = _geom.overlapping_spheres(3, sphere_i, sphere_j);
 
-				double Lip_radius = sphere_j[3] + Lip * h;
+				double Lip_radius = new_radii[sphere_index] + Lip * h;
 				if (new_radii[isphere] > Lip_radius)
 				{
 					// Shrink larger sphere to satisfy Global lipschitz constant
