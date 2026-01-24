@@ -4,43 +4,50 @@
 *  Version    : Development Branch                        *
 *  Git SHA1   : UNKNOWN                                   *
 *  Commit Date: UNKNOWN                                   *
-*  Run Date   : 2025-10-10 12:37:34 +0000                 *
+*  Run Date   : 2025-12-02 11:16:37 +0000                 *
 *  Website    : https://vorocrust.sandia.gov              *
 *                                                         *
 ***********************************************************
 MeshingVoroCrust::Input Data:
-  * Input Mesh = /home/yiming/research/vorocrust-meshing/tests/datasets/Mobius/mobius1.obj
+  * Input Mesh = /home/yiming/research/vorocrust-meshing/tests/datasets/Bunny/bunny.obj
     Minimum Sphere Radius = 0
-    Maximum Sphere Radius = 10000
-    Lipschitz Const = 0.25
+    Maximum Sphere Radius = 100
+    Lipschitz Const = 0.2
     VC Smooth Angle Threshold = 80
     A clean input model 
-    Number of OpenMP threads = 64
+    Number of OpenMP threads = 128
 VoroCrust::Reading obj file:
-  * Number of Input mesh points = 21373
-  * Number of Input mesh faces = 42746
+  * Number of Input mesh points = 36012
+  * Number of Input mesh faces = 72020
 VoroCrust::Initiating VoroCrust Sampler .. 
-  * VoroCrust is using 64 / 128 available threads!
+  * VoroCrust is using 128 / 128 available threads!
 VoroCrust::Feature Detection and Point Clouds Generation (Clean Input):
-  * Number of Sharp Corners = 0
-  * Number of Sharp Edges = 0
-  * executed in 1.65873 seconds!
+  * Number of Sharp Corners = 8
+  * Number of Sharp Edges = 10
+  * executed in 2.37792 seconds!
   * No sliver spheres were detected!
-  * Min. relative distance between upper seeds = 0.0330089
-  * Min. relative distance between lower seeds = 0.00163324
-  * Min. relative distance between lower and upper seeds = 0.00129484
- *** VoroCrust surface is not topologically equivalent to VoroCrust spheres, Nummber of invalid edges = 24
+  * #valid three-sphere triplets = 4091
+  * #triplets with intersection count != 2 = 0
+  * #unique upper intersection points = 4091
+  * #unique lower intersection points = 4091
+  * #unique three-sphere intersection points (upper+lower) = 8182
+  * Min. relative distance between upper seeds = 0.00339352
+  * Min. relative distance between lower seeds = 0.00258295
+  * Min. relative distance between lower and upper seeds = 0.000265951
+ *** VoroCrust surface is not topologically equivalent to VoroCrust spheres, Number of invalid edges = 508
+VoroCrust::Coloring Surface Seeds:
+  * Number of subregions is 0
+  * executed in 0.019546 seconds!
 MeshingVoroCrust::Generating Interior Seeds:
-  * Number of seeds 6010
-  * Number of seeds 7213
-  * Number of seeds 7246
-  * Number of iterations = 193
-  * Deactivation time = 0.0657817
-  * Spoke throwing time = 0.0412097
-  * Lipschitz time = 0.00362369
+  * Number of seeds 8182
+  * Number of seeds 8182
+  * Number of iterations = 1
+  * Deactivation time = 3.59956e-07
+  * Spoke throwing time = 0.00404404
+  * Lipschitz time = 0.012829
   * Seed update time = 0
-  * All seeds are stored in seeds.csv, saved in 0.197066 seconds!
-  * Number of added seeds 1236
-  * executed in 0.197085 seconds!
+  * All seeds are stored in seeds.csv, saved in 0.118379 seconds!
+  * Number of added seeds 0
+  * executed in 0.118412 seconds!
 
-*** MeshingVoroCrust::Mission Accomplished in 1.51967 seconds! ***
+*** MeshingVoroCrust::Mission Accomplished in 1.90886 seconds! ***
